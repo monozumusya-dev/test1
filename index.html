@@ -1,11 +1,232 @@
 <!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>テストゲーム</title>
-  </head>
-  <body>
-    <h1>ゲーム準備中</h1>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#173b67">
+  <title>八王子 町名あてゲーム</title>
+  <style>
+    :root { --navy:#173b67; --blue:#2f80ed; --pale:#eaf4ff; --ink:#142238; --line:#bfd0e3; --red:#df4f4f; --green:#35a36b; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f4f8fc; color:var(--ink); font-family:"Noto Sans JP",system-ui,sans-serif; }
+    header { padding:18px 18px 13px; color:white; background:linear-gradient(135deg,#16315d,#276ba8); }
+    h1 { margin:0; font-size:20px; letter-spacing:.04em; }
+    #subtitle { margin:5px 0 0; opacity:.88; font-size:12px; }
+    main { width:min(760px,100%); margin:0 auto; padding:14px 12px 130px; }
+    #areaScreen { padding:8px 2px; }
+    .lead { margin:7px 0 17px; line-height:1.75; font-size:14px; }
+    .area-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+    .area-button { min-height:86px; border:1px solid var(--line); border-radius:14px; background:white; color:var(--navy); font-weight:700; font-size:17px; box-shadow:0 2px 6px #16315d12; }
+    .area-button:first-child { grid-column:span 2; }
+    .area-button small { display:block; margin-top:5px; color:#61758d; font-size:11px; font-weight:500; }
+    #gameScreen { display:none; }
+    .status { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+    .back { appearance:none; border:0; background:transparent; color:#276ba8; padding:5px 0; font-weight:700; }
+    .mistakes { padding:6px 10px; border-radius:99px; color:#a42c2c; background:#fff0f0; font-size:13px; font-weight:700; }
+    .question-card { padding:15px 16px; border-radius:15px; background:white; border:1px solid var(--line); box-shadow:0 2px 8px #16315d12; text-align:center; }
+    .question-label { color:#5d718b; font-size:12px; font-weight:700; }
+    #question { margin-top:5px; color:#173b67; font-size:28px; font-weight:800; }
+    #message { min-height:24px; margin:11px 3px 4px; text-align:center; font-size:14px; font-weight:700; }
+    #message.ok { color:#168451; } #message.ng { color:#c53737; } #message.info { color:#5d718b; }
+    #mapWrap { position:relative; margin-top:8px; min-height:410px; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:white; box-shadow:0 2px 8px #16315d10; touch-action:manipulation; }
+    #map { display:block; width:100%; height:calc(100vh - 350px); min-height:410px; max-height:650px; background:#fbfdff; }
+    .town { fill:#dbeaf7; stroke:#fff; stroke-width:.65; vector-effect:non-scaling-stroke; cursor:pointer; transition:fill .12s; }
+    .town:hover { fill:#a8cdf5; }
+    .town.selected { fill:#f6c453; stroke:#9a6100; stroke-width:1.8; }
+    .town.correct { fill:#5bc68a; stroke:#197044; stroke-width:1.8; }
+    .town.wrong { fill:#ee7b78; stroke:#a62828; stroke-width:1.8; }
+    #loading { position:absolute; inset:0; display:grid; place-items:center; padding:30px; text-align:center; color:#5d718b; background:#ffffffdf; font-size:14px; }
+    #bottom { position:fixed; z-index:2; left:0; right:0; bottom:0; padding:12px max(14px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left)); border-top:1px solid var(--line); background:#ffffffed; backdrop-filter:blur(12px); }
+    #action { display:block; width:min(736px,100%); min-height:52px; margin:auto; border:0; border-radius:13px; color:white; background:var(--blue); font-size:17px; font-weight:800; box-shadow:0 3px 8px #2f80ed44; }
+    #action:disabled { color:#8ca1b7; background:#dbe5ee; box-shadow:none; }
+    #credit { margin:10px 4px 0; color:#718298; text-align:center; font-size:10px; line-height:1.5; }
+    .hidden { display:none !important; }
+    @media (min-width:560px) { .area-grid { grid-template-columns:repeat(3,1fr); } .area-button:first-child { grid-column:auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>八王子 町名あてゲーム</h1>
+    <p id="subtitle">地図をタップして、出題された町を当てよう</p>
+  </header>
+
+  <main>
+    <section id="areaScreen">
+      <p class="lead">八王子駅を中心に5つのエリアに分けました。まず遊ぶエリアを選んでください。<br>間違えられるのは<strong>5回まで</strong>です。</p>
+      <div class="area-grid">
+        <button class="area-button" data-area="center">駅周辺<small>八王子駅の近く</small></button>
+        <button class="area-button" data-area="north">北エリア<small>駅から北側</small></button>
+        <button class="area-button" data-area="east">東エリア<small>駅から東側</small></button>
+        <button class="area-button" data-area="west">西エリア<small>駅から西側</small></button>
+        <button class="area-button" data-area="south">南エリア<small>駅から南側</small></button>
+      </div>
+    </section>
+
+    <section id="gameScreen">
+      <div class="status">
+        <button class="back" id="backButton">← エリアを選び直す</button>
+        <div class="mistakes" id="mistakes">のこりミス 5 回</div>
+      </div>
+      <div class="question-card">
+        <div class="question-label" id="areaName"></div>
+        <div id="question">読み込み中…</div>
+      </div>
+      <div id="message" class="info">地図から町を1つ選んでください</div>
+      <div id="mapWrap">
+        <svg id="map" preserveAspectRatio="xMidYMid meet" aria-label="八王子市の町名地図"></svg>
+        <div id="loading">八王子市の町境データを読み込んでいます…</div>
+      </div>
+      <p id="credit">町界：国勢調査町丁・字等別境界データセット（CODH作成）／令和2年国勢調査町丁・字等別境界データ（e-Stat）を加工</p>
+    </section>
+  </main>
+  <div id="bottom" class="hidden"><button id="action" disabled>町を選んでください</button></div>
+
+  <script>
+    const GEO_URL = 'https://geoshape.ex.nii.ac.jp/ka/topojson/2020/13/r2ka13201.topojson';
+    const STATION = { x:139.3389, y:35.6556 };
+    const CENTER_RADIUS = 0.0215;
+    const MAX_MISSES = 5;
+    const areaLabels = { center:'駅周辺エリア', north:'北エリア', east:'東エリア', west:'西エリア', south:'南エリア' };
+    let topology, allFeatures = [], townsByArea = {}, activeArea, answerTown, selectedTown;
+    let misses = 0, asked = new Set(), locked = false;
+
+    const $ = id => document.getElementById(id);
+    const normalize = value => String(value || '')
+      .replace(/[\s　]/g,'').replace(/[一二三四五六七八九十]+丁目/g,'').replace(/[0-9]+丁目/g,'').replace(/ヶ/g,'ケ');
+
+    function areaFor(x, y) {
+      const dx = x - STATION.x, dy = y - STATION.y;
+      if (Math.hypot(dx, dy) <= CENTER_RADIUS) return 'center';
+      if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'east' : 'west';
+      return dy >= 0 ? 'north' : 'south';
+    }
+    function decodeArcs(topo) {
+      const scale = topo.transform ? topo.transform.scale : [1,1];
+      const translate = topo.transform ? topo.transform.translate : [0,0];
+      return topo.arcs.map(arc => {
+        let x=0, y=0;
+        return arc.map(p => { x += p[0]; y += p[1]; return [x*scale[0]+translate[0], y*scale[1]+translate[1]]; });
+      });
+    }
+    function ringFromArcs(indices, arcs) {
+      const ring = [];
+      indices.forEach(index => {
+        const arc = index < 0 ? arcs[~index].slice().reverse() : arcs[index];
+        arc.forEach((point, i) => { if (i || !ring.length) ring.push(point); });
+      });
+      return ring;
+    }
+    function ringsFor(geometry, arcs) {
+      if (geometry.type === 'Polygon') return geometry.arcs.map(r => ringFromArcs(r, arcs));
+      if (geometry.type === 'MultiPolygon') return geometry.arcs.flatMap(p => p.map(r => ringFromArcs(r, arcs)));
+      return [];
+    }
+    function toPath(rings) {
+      return rings.map(r => r.map((p,i) => (i ? 'L' : 'M') + p[0].toFixed(5) + ',' + p[1].toFixed(5)).join(' ') + 'Z').join(' ');
+    }
+    function setMessage(text, kind='info') {
+      const message = $('message'); message.textContent = text; message.className = kind;
+    }
+    function updateMistakes() { $('mistakes').textContent = 'のこりミス ' + Math.max(0, MAX_MISSES - misses) + ' 回'; }
+    function resetPaths() { document.querySelectorAll('.town').forEach(p => p.classList.remove('selected','correct','wrong')); }
+
+    async function loadTopology() {
+      const response = await fetch(GEO_URL);
+      if (!response.ok) throw new Error('町境データを取得できませんでした。');
+      topology = await response.json();
+      const arcs = decodeArcs(topology);
+      const object = topology.objects.town || Object.values(topology.objects)[0];
+      const geometries = object.type === 'GeometryCollection' ? object.geometries : [object];
+      allFeatures = geometries.map(g => {
+        const town = normalize(g.properties && g.properties.S_NAME);
+        const x = Number(g.properties && g.properties.X_CODE), y = Number(g.properties && g.properties.Y_CODE);
+        return { town, area:areaFor(x,y), rings:ringsFor(g,arcs) };
+      }).filter(f => f.town && f.rings.length);
+      townsByArea = Object.fromEntries(Object.keys(areaLabels).map(area => [area, [...new Set(allFeatures.filter(f => f.area === area).map(f => f.town))]]));
+      $('loading').classList.add('hidden');
+    }
+
+    function renderMap() {
+      const features = allFeatures.filter(f => f.area === activeArea);
+      const points = features.flatMap(f => f.rings.flat());
+      const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+      const pad = Math.max(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)) * .035;
+      $('map').setAttribute('viewBox', [Math.min(...xs)-pad, Math.min(...ys)-pad, Math.max(...xs)-Math.min(...xs)+pad*2, Math.max(...ys)-Math.min(...ys)+pad*2].join(' '));
+      $('map').innerHTML = '';
+      features.forEach(feature => {
+        const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+        path.setAttribute('d', toPath(feature.rings));
+        path.setAttribute('class','town');
+        path.dataset.town = feature.town;
+        path.setAttribute('aria-label', feature.town);
+        path.addEventListener('click', () => chooseTown(feature.town));
+        $('map').appendChild(path);
+      });
+    }
+    function chooseTown(town) {
+      if (locked) return;
+      selectedTown = town;
+      resetPaths();
+      document.querySelectorAll('.town').forEach(p => { if (p.dataset.town === town) p.classList.add('selected'); });
+      setMessage('「' + town + '」を選択中です。決定を押してください。');
+      $('action').disabled = false; $('action').textContent = '決定する';
+    }
+    function nextQuestion() {
+      locked = false; selectedTown = null; resetPaths();
+      const candidates = townsByArea[activeArea];
+      const unused = candidates.filter(t => !asked.has(activeArea + ':' + t));
+      if (!unused.length) asked = new Set([...asked].filter(key => !key.startsWith(activeArea + ':')));
+      const pool = unused.length ? unused : candidates;
+      answerTown = pool[Math.floor(Math.random() * pool.length)];
+      asked.add(activeArea + ':' + answerTown);
+      $('question').textContent = answerTown;
+      setMessage('地図から町を1つ選んでください');
+      $('action').disabled = true; $('action').textContent = '町を選んでください';
+    }
+    function answer() {
+      if (locked || !selectedTown) return;
+      locked = true;
+      const isCorrect = selectedTown === answerTown;
+      document.querySelectorAll('.town').forEach(p => {
+        if (p.dataset.town === answerTown) p.classList.add('correct');
+        if (!isCorrect && p.dataset.town === selectedTown) p.classList.add('wrong');
+      });
+      if (isCorrect) {
+        setMessage('正解！ 「' + answerTown + '」です。', 'ok');
+        $('action').disabled = false; $('action').textContent = '次の問題へ';
+        $('action').onclick = nextQuestion;
+      } else {
+        misses += 1; updateMistakes();
+        if (misses >= MAX_MISSES) {
+          setMessage('ゲームオーバー。正解は「' + answerTown + '」でした。', 'ng');
+          $('action').disabled = false; $('action').textContent = 'このエリアでもう一度遊ぶ';
+          $('action').onclick = startGame;
+        } else {
+          setMessage('不正解。正解は「' + answerTown + '」です。', 'ng');
+          $('action').disabled = false; $('action').textContent = '次の問題へ';
+          $('action').onclick = nextQuestion;
+        }
+      }
+    }
+    function startGame() {
+      misses = 0; updateMistakes(); renderMap(); nextQuestion();
+      $('action').onclick = answer;
+    }
+    function openArea(area) {
+      activeArea = area;
+      $('areaScreen').style.display = 'none'; $('gameScreen').style.display = 'block'; $('bottom').classList.remove('hidden');
+      $('areaName').textContent = areaLabels[area];
+      startGame();
+    }
+    document.querySelectorAll('.area-button').forEach(button => button.addEventListener('click', () => openArea(button.dataset.area)));
+    $('backButton').addEventListener('click', () => {
+      $('bottom').classList.add('hidden'); $('gameScreen').style.display = 'none'; $('areaScreen').style.display = 'block';
+    });
+    $('action').addEventListener('click', () => { if (!locked) answer(); });
+    loadTopology().catch(error => {
+      $('loading').textContent = '地図を表示できませんでした。通信環境を確認して再読み込みしてください。';
+      console.error(error);
+    });
+  </script>
+</body>
 </html>
