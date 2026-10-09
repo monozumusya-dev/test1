@@ -174,9 +174,16 @@
     function enableMapZoom() {
       const svg = $('map');
       svg.onwheel = event => { event.preventDefault(); zoomAt(event.clientX, event.clientY, event.deltaY > 0 ? 1.18 : .84); };
+      
+      let pinching = false;
       svg.onpointerdown = event => {
-        svg.setPointerCapture(event.pointerId); activePointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
-        if (activePointers.size === 2) { const [a,b]=[...activePointers.values()]; pinchStart={distance:Math.hypot(a.x-b.x,a.y-b.y),view:currentView()}; }
+        svg.setPointerCapture(event.pointerId);
+        activePointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+        if (activePointers.size === 2) {
+          const [a,b]=[...activePointers.values()];
+          pinchStart={distance:Math.hypot(a.x-b.x,a.y-b.y),view:currentView()};
+          pinching = true;
+        }
       };
       svg.onpointermove = event => {
         if (!activePointers.has(event.pointerId)) return;
@@ -186,8 +193,17 @@
           if (distance > 10) zoomAt((a.x+b.x)/2,(a.y+b.y)/2,pinchStart.distance/distance,pinchStart.view);
         }
       };
-      const endPointer = event => { activePointers.delete(event.pointerId); if (activePointers.size < 2) pinchStart=null; };
-      svg.onpointerup=endPointer; svg.onpointercancel=endPointer;
+      svg.onpointerup = event => {
+        const wasSingleTouch = activePointers.size === 1 && !pinching;
+        activePointers.delete(event.pointerId);
+        if (wasSingleTouch) {
+          const target = document.elementFromPoint(event.clientX,event.clientY);
+          const path = target && target.closest && target.closest('.town.active');
+          if (path) chooseTown(path.dataset.town,path);
+        }
+        if (activePointers.size < 2) { pinchStart=null; pinching=false; }
+      };
+      svg.onpointercancel = event => { activePointers.delete(event.pointerId); if (activePointers.size < 2) { pinchStart=null; pinching=false; } };
     }
     function renderMap() {
       mapBaseView = mapBounds(allFeatures); setViewBox(mapBaseView); $('map').innerHTML = '';
