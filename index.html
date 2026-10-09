@@ -312,7 +312,6 @@
     $('backButton').addEventListener('click', () => {
       $('bottom').classList.add('hidden'); $('gameScreen').style.display = 'none'; $('areaScreen').style.display = 'block';
     });
-    $('action').addEventListener('click', () => { if (!locked) answer(); });
     loadTopology().catch(error => {
       $('loading').textContent = '地図を表示できませんでした。通信環境を確認して再読み込みしてください。';
       console.error(error);
