@@ -126,7 +126,7 @@
       return [];
     }
     function toPath(rings) {
-      return rings.map(r => r.map((p,i) => (i ? 'L' : 'M') + p[0].toFixed(5) + ',' + p[1].toFixed(5)).join(' ') + 'Z').join(' ');
+      return rings.map(r => r.map((p,i) => (i ? 'L' : 'M') + p[0].toFixed(5) + ',' + (-p[1]).toFixed(5)).join(' ') + 'Z').join(' ');
     }
     function setMessage(text, kind='info') {
       const message = $('message'); message.textContent = text; message.className = kind;
@@ -152,7 +152,7 @@
 
     function mapBounds(features) {
       const points = features.flatMap(f => f.rings.flat());
-      const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+      const xs = points.map(p => p[0]), ys = points.map(p => -p[1]);
       const pad = Math.max(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)) * .035;
       return { x:Math.min(...xs)-pad, y:Math.min(...ys)-pad, width:Math.max(...xs)-Math.min(...xs)+pad*2, height:Math.max(...ys)-Math.min(...ys)+pad*2 };
     }
