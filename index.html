@@ -31,6 +31,14 @@
     #mapWrap { position:relative; margin-top:8px; min-height:410px; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:white; box-shadow:0 2px 8px #16315d10; touch-action:none; }
     #map { display:block; width:100%; height:calc(100vh - 350px); min-height:410px; max-height:650px; background:#fbfdff; }
     .town { fill:#dbeaf7; stroke:#fff; stroke-width:.65; vector-effect:non-scaling-stroke; cursor:pointer; transition:fill .12s; }
+    .river { fill:none; stroke:#75c8ed; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; opacity:.85; vector-effect:non-scaling-stroke; pointer-events:none; }
+    .road { fill:none; stroke:#e99b52; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; opacity:.78; vector-effect:non-scaling-stroke; pointer-events:none; }
+    .road.expressway { stroke:#d86d6d; stroke-width:3; stroke-dasharray:7 4; }
+    #map .map-overlay { pointer-events:none; }
+    #resultMark { position:absolute; z-index:1; inset:0; display:grid; place-items:center; pointer-events:none; font-family:Arial,sans-serif; font-size:clamp(150px,42vw,265px); font-weight:900; line-height:1; opacity:0; transform:scale(.72); transition:opacity .14s,transform .14s; text-shadow:0 4px 10px #14223833; }
+    #resultMark.show { opacity:1; transform:scale(1); }
+    #resultMark.correct { color:#e33737; }
+    #resultMark.wrong { color:#111827; }
     .town:hover { fill:#a8cdf5; }
     .town.selected { fill:#f6c453; stroke:#9a6100; stroke-width:1.8; }
     .town.correct { fill:#5bc68a; stroke:#197044; stroke-width:1.8; }
@@ -75,6 +83,7 @@
       <div id="message" class="info">地図から町を1つ選んでください</div>
       <div id="mapWrap">
         <svg id="map" preserveAspectRatio="xMidYMid meet" aria-label="八王子市の町名地図"></svg>
+        <div id="resultMark" aria-live="polite"></div>
         <div id="loading">八王子市の町境データを読み込んでいます…</div>
       </div>
       <p id="credit">町界：国勢調査町丁・字等別境界データセット（CODH作成）／令和2年国勢調査町丁・字等別境界データ（e-Stat）を加工</p>
@@ -133,6 +142,12 @@
     }
     function updateMistakes() { $('mistakes').textContent = 'のこりミス ' + Math.max(0, MAX_MISSES - misses) + ' 回'; }
     function resetPaths() { document.querySelectorAll('.town').forEach(p => p.classList.remove('selected','correct','wrong')); }
+    function hideResult() { const mark=$('resultMark'); mark.className=''; mark.textContent=''; }
+    function showResult(isCorrect) {
+      const mark=$('resultMark');
+      mark.textContent = isCorrect ? '◯' : '×';
+      mark.className = 'show ' + (isCorrect ? 'correct' : 'wrong');
+    }
 
     async function loadTopology() {
       const response = await fetch(GEO_URL);
@@ -215,7 +230,32 @@
         if (feature.area === activeArea) path.addEventListener('click',()=>chooseTown(feature.town,path));
         $('map').appendChild(path);
       });
+      renderMapLandmarks();
       enableMapZoom();
+    }
+    // 地図の位置関係をつかみやすくするため、町名を表示しない川・主要道路の線を重ねる。
+    function renderMapLandmarks() {
+      const svg = $('map'), group = document.createElementNS('http://www.w3.org/2000/svg','g');
+      group.setAttribute('class','map-overlay');
+      const riverLines = [
+        [[139.255,35.658],[139.283,35.657],[139.310,35.659],[139.339,35.659],[139.367,35.665],[139.397,35.668]],
+        [[139.288,35.692],[139.298,35.680],[139.309,35.671],[139.326,35.662]],
+        [[139.347,35.601],[139.353,35.614],[139.362,35.628],[139.373,35.644],[139.384,35.660]]
+      ];
+      const roadLines = [
+        [[139.262,35.651],[139.285,35.653],[139.310,35.657],[139.337,35.659],[139.364,35.660],[139.392,35.661]],
+        [[139.338,35.625],[139.341,35.644],[139.342,35.660],[139.349,35.679],[139.356,35.701]],
+        [[139.262,35.695],[139.289,35.699],[139.320,35.699],[139.351,35.702],[139.380,35.704]],
+        [[139.294,35.612],[139.314,35.621],[139.337,35.628],[139.359,35.636],[139.382,35.646]]
+      ];
+      const makePath = (coords, cls) => {
+        const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+        p.setAttribute('class',cls); p.setAttribute('d',coords.map((c,i)=>(i?'L':'M')+c[0]+','+(-c[1])).join(' '));
+        group.appendChild(p);
+      };
+      riverLines.forEach(line=>makePath(line,'river'));
+      roadLines.forEach((line,index)=>makePath(line,index===2?'road expressway':'road'));
+      svg.appendChild(group);
     }
     function chooseTown(town, path) {
       if (locked) return;
@@ -224,7 +264,7 @@
       $('action').disabled=false; $('action').textContent='決定する';
     }
     function nextQuestion() {
-      locked = false; selectedTown = null; selectedPath = null; resetPaths();
+      locked = false; selectedTown = null; selectedPath = null; resetPaths(); hideResult();
       const candidates = townsByArea[activeArea];
       const unused = candidates.filter(t => !asked.has(activeArea + ':' + t));
       if (!unused.length) asked = new Set([...asked].filter(key => !key.startsWith(activeArea + ':')));
@@ -240,6 +280,7 @@
       locked = true;
       const isCorrect = selectedTown === answerTown;
       if (selectedPath) selectedPath.classList.add(isCorrect ? 'correct' : 'wrong');
+      showResult(isCorrect);
       if (isCorrect) {
         setMessage('正解！ 「' + answerTown + '」です。', 'ok');
         $('action').disabled = false; $('action').textContent = '次の問題へ';
