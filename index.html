@@ -28,13 +28,14 @@
     #question { margin-top:5px; color:#173b67; font-size:28px; font-weight:800; }
     #message { min-height:24px; margin:11px 3px 4px; text-align:center; font-size:14px; font-weight:700; }
     #message.ok { color:#168451; } #message.ng { color:#c53737; } #message.info { color:#5d718b; }
-    #mapWrap { position:relative; margin-top:8px; min-height:410px; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:white; box-shadow:0 2px 8px #16315d10; touch-action:manipulation; }
+    #mapWrap { position:relative; margin-top:8px; min-height:410px; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:white; box-shadow:0 2px 8px #16315d10; touch-action:none; }
     #map { display:block; width:100%; height:calc(100vh - 350px); min-height:410px; max-height:650px; background:#fbfdff; }
     .town { fill:#dbeaf7; stroke:#fff; stroke-width:.65; vector-effect:non-scaling-stroke; cursor:pointer; transition:fill .12s; }
     .town:hover { fill:#a8cdf5; }
     .town.selected { fill:#f6c453; stroke:#9a6100; stroke-width:1.8; }
     .town.correct { fill:#5bc68a; stroke:#197044; stroke-width:1.8; }
     .town.wrong { fill:#ee7b78; stroke:#a62828; stroke-width:1.8; }
+    .town.inactive { fill:#d9dee5; stroke:#ffffff; pointer-events:none; }
     #loading { position:absolute; inset:0; display:grid; place-items:center; padding:30px; text-align:center; color:#5d718b; background:#ffffffdf; font-size:14px; }
     #bottom { position:fixed; z-index:2; left:0; right:0; bottom:0; padding:12px max(14px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left)); border-top:1px solid var(--line); background:#ffffffed; backdrop-filter:blur(12px); }
     #action { display:block; width:min(736px,100%); min-height:52px; margin:auto; border:0; border-radius:13px; color:white; background:var(--blue); font-size:17px; font-weight:800; box-shadow:0 3px 8px #2f80ed44; }
@@ -87,7 +88,8 @@
     const CENTER_RADIUS = 0.0215;
     const MAX_MISSES = 5;
     const areaLabels = { center:'駅周辺エリア', north:'北エリア', east:'東エリア', west:'西エリア', south:'南エリア' };
-    let topology, allFeatures = [], townsByArea = {}, activeArea, answerTown, selectedTown;
+    let topology, allFeatures = [], townsByArea = {}, activeArea, answerTown, selectedTown, selectedPath;
+    let mapBaseView, activePointers = new Map(), pinchStart;
     let misses = 0, asked = new Set(), locked = false;
 
     const $ = id => document.getElementById(id);
@@ -96,6 +98,8 @@
 
     function areaFor(x, y) {
       const dx = x - STATION.x, dy = y - STATION.y;
+      // 南大沢・堀之内・多摩ニュータウン側を、ひと続きの南エリアにまとめる。
+      if (y < 35.640) return 'south';
       if (Math.hypot(dx, dy) <= CENTER_RADIUS) return 'center';
       if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'east' : 'west';
       return dy >= 0 ? 'north' : 'south';
@@ -146,33 +150,65 @@
       $('loading').classList.add('hidden');
     }
 
-    function renderMap() {
-      const features = allFeatures.filter(f => f.area === activeArea);
+    function mapBounds(features) {
       const points = features.flatMap(f => f.rings.flat());
       const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
       const pad = Math.max(Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys)) * .035;
-      $('map').setAttribute('viewBox', [Math.min(...xs)-pad, Math.min(...ys)-pad, Math.max(...xs)-Math.min(...xs)+pad*2, Math.max(...ys)-Math.min(...ys)+pad*2].join(' '));
-      $('map').innerHTML = '';
-      features.forEach(feature => {
+      return { x:Math.min(...xs)-pad, y:Math.min(...ys)-pad, width:Math.max(...xs)-Math.min(...xs)+pad*2, height:Math.max(...ys)-Math.min(...ys)+pad*2 };
+    }
+    function setViewBox(view) { $('map').setAttribute('viewBox', [view.x,view.y,view.width,view.height].join(' ')); }
+    function currentView() {
+      const values = $('map').getAttribute('viewBox').trim().split(/\s+/).map(Number);
+      return {x:values[0],y:values[1],width:values[2],height:values[3]};
+    }
+    function clientToMap(clientX, clientY, view) {
+      const rect = $('map').getBoundingClientRect();
+      return { x:view.x + (clientX-rect.left)/rect.width*view.width, y:view.y + (clientY-rect.top)/rect.height*view.height };
+    }
+    function zoomAt(clientX, clientY, factor, sourceView) {
+      const view = sourceView || currentView(), focus = clientToMap(clientX, clientY, view);
+      const width = Math.max(mapBaseView.width*.18, Math.min(mapBaseView.width, view.width*factor));
+      const height = width * view.height / view.width;
+      setViewBox({ x:focus.x-(focus.x-view.x)*width/view.width, y:focus.y-(focus.y-view.y)*height/view.height, width, height });
+    }
+    function enableMapZoom() {
+      const svg = $('map');
+      svg.onwheel = event => { event.preventDefault(); zoomAt(event.clientX, event.clientY, event.deltaY > 0 ? 1.18 : .84); };
+      svg.onpointerdown = event => {
+        svg.setPointerCapture(event.pointerId); activePointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+        if (activePointers.size === 2) { const [a,b]=[...activePointers.values()]; pinchStart={distance:Math.hypot(a.x-b.x,a.y-b.y),view:currentView()}; }
+      };
+      svg.onpointermove = event => {
+        if (!activePointers.has(event.pointerId)) return;
+        activePointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+        if (activePointers.size === 2 && pinchStart) {
+          const [a,b]=[...activePointers.values()], distance=Math.hypot(a.x-b.x,a.y-b.y);
+          if (distance > 10) zoomAt((a.x+b.x)/2,(a.y+b.y)/2,pinchStart.distance/distance,pinchStart.view);
+        }
+      };
+      const endPointer = event => { activePointers.delete(event.pointerId); if (activePointers.size < 2) pinchStart=null; };
+      svg.onpointerup=endPointer; svg.onpointercancel=endPointer;
+    }
+    function renderMap() {
+      mapBaseView = mapBounds(allFeatures); setViewBox(mapBaseView); $('map').innerHTML = '';
+      allFeatures.forEach(feature => {
         const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-        path.setAttribute('d', toPath(feature.rings));
-        path.setAttribute('class','town');
-        path.dataset.town = feature.town;
-        path.setAttribute('aria-label', feature.town);
-        path.addEventListener('click', () => chooseTown(feature.town));
+        path.setAttribute('d',toPath(feature.rings));
+        path.setAttribute('class','town '+(feature.area === activeArea ? 'active' : 'inactive'));
+        path.dataset.town=feature.town; path.setAttribute('aria-label',feature.town);
+        if (feature.area === activeArea) path.addEventListener('click',()=>chooseTown(feature.town,path));
         $('map').appendChild(path);
       });
+      enableMapZoom();
     }
-    function chooseTown(town) {
+    function chooseTown(town, path) {
       if (locked) return;
-      selectedTown = town;
-      resetPaths();
-      document.querySelectorAll('.town').forEach(p => { if (p.dataset.town === town) p.classList.add('selected'); });
-      setMessage('「' + town + '」を選択中です。決定を押してください。');
-      $('action').disabled = false; $('action').textContent = '決定する';
+      selectedTown=town; selectedPath=path; resetPaths(); path.classList.add('selected');
+      setMessage('「'+town+'」を選択中です。決定を押してください。');
+      $('action').disabled=false; $('action').textContent='決定する';
     }
     function nextQuestion() {
-      locked = false; selectedTown = null; resetPaths();
+      locked = false; selectedTown = null; selectedPath = null; resetPaths();
       const candidates = townsByArea[activeArea];
       const unused = candidates.filter(t => !asked.has(activeArea + ':' + t));
       if (!unused.length) asked = new Set([...asked].filter(key => !key.startsWith(activeArea + ':')));
@@ -187,10 +223,7 @@
       if (locked || !selectedTown) return;
       locked = true;
       const isCorrect = selectedTown === answerTown;
-      document.querySelectorAll('.town').forEach(p => {
-        if (p.dataset.town === answerTown) p.classList.add('correct');
-        if (!isCorrect && p.dataset.town === selectedTown) p.classList.add('wrong');
-      });
+      if (selectedPath) selectedPath.classList.add(isCorrect ? 'correct' : 'wrong');
       if (isCorrect) {
         setMessage('正解！ 「' + answerTown + '」です。', 'ok');
         $('action').disabled = false; $('action').textContent = '次の問題へ';
