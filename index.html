@@ -101,8 +101,8 @@
       return dy >= 0 ? 'north' : 'south';
     }
     function decodeArcs(topo) {
-      const scale = topo.transform ? topo.transform.scale : [1,1];
-      const translate = topo.transform ? topo.transform.translate : [0,0];
+      if (!topo.transform) return topo.arcs;
+      const scale = topo.transform.scale, translate = topo.transform.translate;
       return topo.arcs.map(arc => {
         let x=0, y=0;
         return arc.map(p => { x += p[0]; y += p[1]; return [x*scale[0]+translate[0], y*scale[1]+translate[1]]; });
