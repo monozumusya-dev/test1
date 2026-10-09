@@ -99,7 +99,7 @@
     const areaLabels = { center:'駅周辺エリア', north:'北エリア', east:'東エリア', west:'西エリア', south:'南エリア' };
     let topology, allFeatures = [], townsByArea = {}, activeArea, answerTown, selectedTown, selectedPath;
     let mapBaseView, activePointers = new Map(), pinchStart;
-    let misses = 0, asked = new Set(), locked = false;
+    let misses = 0, asked = new Set(), locked = false, actionMode = 'answer';
 
     const $ = id => document.getElementById(id);
     const normalize = value => String(value || '')
@@ -284,23 +284,23 @@
       if (isCorrect) {
         setMessage('正解！ 「' + answerTown + '」です。', 'ok');
         $('action').disabled = false; $('action').textContent = '次の問題へ';
-        $('action').onclick = nextQuestion;
+        actionMode = 'next';
       } else {
         misses += 1; updateMistakes();
         if (misses >= MAX_MISSES) {
           setMessage('ゲームオーバー。正解は「' + answerTown + '」でした。', 'ng');
           $('action').disabled = false; $('action').textContent = 'このエリアでもう一度遊ぶ';
-          $('action').onclick = startGame;
+          actionMode = 'restart';
         } else {
           setMessage('不正解。正解は「' + answerTown + '」です。', 'ng');
           $('action').disabled = false; $('action').textContent = '次の問題へ';
-          $('action').onclick = nextQuestion;
+          actionMode = 'next';
         }
       }
     }
     function startGame() {
       misses = 0; updateMistakes(); renderMap(); nextQuestion();
-      $('action').onclick = answer;
+      actionMode = 'answer';
     }
     function openArea(area) {
       activeArea = area;
@@ -312,6 +312,11 @@
     $('backButton').addEventListener('click', () => {
       $('bottom').classList.add('hidden'); $('gameScreen').style.display = 'none'; $('areaScreen').style.display = 'block';
     });
+    $('action').onclick = () => {
+      if (actionMode === 'answer') answer();
+      else if (actionMode === 'next') nextQuestion();
+      else if (actionMode === 'restart') startGame();
+    };
     loadTopology().catch(error => {
       $('loading').textContent = '地図を表示できませんでした。通信環境を確認して再読み込みしてください。';
       console.error(error);
